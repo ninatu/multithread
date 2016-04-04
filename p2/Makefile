@@ -1,5 +1,5 @@
 CC=g++
-CFLAGS=-c -O1 -Wall -std=c++11 -g
+CFLAGS=-c -O1 -Wall -std=c++11
 LDFLAGS=
 SOURCES=message.cpp messageforsend.cpp messagereceiver.cpp messagesender.cpp client.cpp server.cpp 
 ALL_SOURCES = $(SOURCES) clientmain.cpp servermain.cpp
