@@ -56,21 +56,29 @@ void Server::deleteClient(int clientFd)
 void Server::readClient(int clientFd)
 {
     char buf[1024];
-    int nbytes ;
-    if ((nbytes = recv(clientFd, buf, sizeof(buf), 0)) <= 0) {
-        if (nbytes == 0) {
-            deleteClient(clientFd);
+    int nbytes;
+    while (1) {
+        if ((nbytes = recv(clientFd, buf, sizeof(buf), 0)) <= 0) {
+            if (nbytes == 0) {
+                deleteClient(clientFd);
+                break;
+            } else {
+                if (errno != EAGAIN)  {
+                    perror("recv");
+                    exit(1);
+                }
+                else {
+                    break;
+                }
+            }
         } else {
-            perror("recv");
-            exit(1);
+            auto msgs = messangerReceiver.process(clientFd, buf, nbytes);
+            for(size_t i = 0; i < msgs.size(); i++) {
+                messageSender.add_message(msgs[i]);
+                std::cout << msgs[i] << std::endl;
+            }
+            writeMessages();
         }
-    } else {
-        auto msgs = messangerReceiver.process(clientFd, buf, nbytes);
-        for(size_t i = 0; i < msgs.size(); i++) {
-            messageSender.add_message(msgs[i]);
-            std::cout << msgs[i] << std::endl;
-        }
-        writeMessages();
     }
 }
 
@@ -105,7 +113,7 @@ void Server::writeMessages()
         if (len == 0 && (iter->second).need_write)  {
             struct epoll_event new_event;
             new_event.data.fd = clientFd;
-            new_event.events = EPOLLIN | EPOLLET; /* edge triggered */
+            new_event.events = EPOLLIN | EPOLLET ; /* edge triggered */
             if (epoll_ctl(epollFd , EPOLL_CTL_MOD, clientFd, &new_event) == -1) {
                 perror("epoll_ctl");
                 exit(1);
@@ -122,24 +130,38 @@ void Server::processMasterEvent(struct epoll_event& event)
         exit(1);
     }
     else {       
-       struct sockaddr newSockAddr;
-       socklen_t addrLen = sizeof(newSockAddr);
-       int newFd = accept(masterSocket, (struct sockaddr *)&newSockAddr, &addrLen);
-       if (newFd == -1) {
+        struct sockaddr newSockAddr;
+        socklen_t addrLen = sizeof(newSockAddr);
+        int newFd = accept(masterSocket, (struct sockaddr *)&newSockAddr, &addrLen);
+        if (newFd == -1) {
            perror("accept");
            exit(1);
-       }
-       struct epoll_event new_event;
-       new_event.data.fd = newFd;
-       new_event.events = EPOLLIN | EPOLLET; /* edge triggered */
-       if (epoll_ctl(epollFd , EPOLL_CTL_ADD, newFd, &new_event) == -1) {
+        }
+        int flags, s;
+        flags = fcntl (newFd, F_GETFL, 0);
+        if (flags == -1) {
+            perror ("fcntl");
+            exit(1);
+        }
+
+        flags |= O_NONBLOCK;
+        s = fcntl (newFd, F_SETFL, flags);
+        if (s == -1) {
+            perror ("fcntl");
+            exit(1);
+        }
+
+        struct epoll_event new_event;
+        new_event.data.fd = newFd;
+        new_event.events = EPOLLIN | EPOLLET | EAGAIN; /* edge triggered */
+        if (epoll_ctl(epollFd , EPOLL_CTL_ADD, newFd, &new_event) == -1) {
            perror("epoll_ctl");
            exit(1);
-       }
-       messageSender.add_client(newFd);
-       messageSender.messanger.find(newFd)->second.add_message(std::string("Welcome"));
-       writeMessages();
-       std::cout << "accepted connection" << std::endl;
+        }
+        messageSender.add_client(newFd);
+        messageSender.messanger.find(newFd)->second.add_message(std::string("Welcome"));
+        writeMessages();
+        std::cout << "accepted connection" << std::endl;
    }
 
 }
