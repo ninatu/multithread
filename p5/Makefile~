@@ -1,2 +1,0 @@
-all: main.cpp comand.cpp parser.cpp comand.h parser.h
-
